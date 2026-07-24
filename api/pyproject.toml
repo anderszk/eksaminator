@@ -14,7 +14,7 @@ dependencies = [
     "psycopg[binary]==3.2.*",
     "alembic==1.14.*",
     "arq==0.26.*",
-    "anthropic==0.40.*",
+    "openai==1.*",
     "pymupdf==1.25.*",
     "sentence-transformers==3.*",
     "httpx==0.28.*",

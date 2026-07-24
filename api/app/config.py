@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     stt_url: str = "http://stt:9001"
     tts_url: str = "http://tts:9002"
 
-    anthropic_api_key: str = ""
-    llm_model: str = "claude-sonnet-4-6"
+    openai_api_key: str = ""
+    llm_model: str = "gpt-5.6-luna"
     llm_max_tokens: int = 8000
 
     embedding_model: str = "intfloat/multilingual-e5-large"
