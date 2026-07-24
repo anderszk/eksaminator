@@ -1,5 +1,21 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Alembic (do NOT ignore versions/)
+# nothing to ignore here
+
+# Environment
+.env
+
+# Docker volumes (host-mounted backup dumps)
+*.sql.bak
+
 # dependencies
 /node_modules
 /.pnp

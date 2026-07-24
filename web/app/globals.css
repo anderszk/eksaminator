@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+/* Design tokens — spec §9.7: instrument-panel aesthetic */
+:root {
+  --color-bg: #FAFAF7;
+  --color-ink: #1a1a18;
+  --color-muted: #6b6b66;
+  --color-accent: #2563eb;         /* used only for recording state */
+  --color-timer-amber: #d97706;    /* timer 75–90s */
+  --color-timer-red: #dc2626;      /* timer >90s */
+  --color-border: #e2e2dc;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  font-family: system-ui, sans-serif;
+}
