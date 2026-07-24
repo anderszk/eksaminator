@@ -4,12 +4,12 @@ from typing import Optional
 from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import get_db
-from app.models.models import AnalysisRun, Document
+from app.models.models import AnalysisRun, Chunk, Document, PlanItem
 
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 
@@ -37,17 +37,41 @@ async def run_pipeline(
     if invalid:
         raise HTTPException(400, f"Ukjente steg: {invalid}")
 
+    running = await db.execute(
+        select(AnalysisRun.id).where(AnalysisRun.document_id == doc_id, AnalysisRun.status == "running").limit(1)
+    )
+    if running.scalar_one_or_none():
+        raise HTTPException(409, "Analyse kjører allerede for dette dokumentet.")
+
+    if force:
+        # A forced run means "start over": clear prior pipeline output so stale
+        # results from an earlier run can't linger alongside fresh ones (or, for
+        # ingest, collide with the chunks unique constraint on re-insert). This
+        # cascades to delete Questions and therefore any Turns that answered
+        # them — forcing a re-run on a document already trained on loses that
+        # session history.
+        await db.execute(delete(AnalysisRun).where(AnalysisRun.document_id == doc_id))
+        if "ingest" in stage_list:
+            await db.execute(delete(Chunk).where(Chunk.document_id == doc_id))
+        await db.execute(delete(PlanItem).where(PlanItem.document_id == doc_id))
+        await db.commit()
+
     redis = await _get_redis()
     job_ids = []
     try:
-        for stage in stage_list:
-            job = await redis.enqueue_job(
-                "run_pipeline_stage",
-                doc_id=str(doc_id),
-                stage=stage,
-                force=force,
-            )
-            job_ids.append(job.job_id if job else None)
+        # Stages have real data dependencies (structure/claims need ingest's chunks,
+        # vulnerabilities needs structure+claims, etc.) — enqueue only the first stage;
+        # each stage enqueues the next on completion so they never run concurrently
+        # against incomplete upstream data (see run_pipeline_stage's `remaining_stages`).
+        first_stage, *rest = stage_list
+        job = await redis.enqueue_job(
+            "run_pipeline_stage",
+            doc_id=str(doc_id),
+            stage=first_stage,
+            remaining_stages=rest,
+            force=force,
+        )
+        job_ids.append(job.job_id if job else None)
     finally:
         await redis.aclose()
 

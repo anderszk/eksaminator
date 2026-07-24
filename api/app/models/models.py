@@ -5,10 +5,22 @@ from typing import Any, Optional
 
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, ENUM, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
+
+# Native Postgres enum types (created by the 001_initial migration) — create_type=False
+# so SQLAlchemy binds/casts against the existing type instead of trying to create it.
+PipelineStage = ENUM(
+    "ingest", "structure", "claims", "vulnerabilities", "questions", "answers", "summaries",
+    name="pipeline_stage", create_type=False,
+)
+RunStatus = ENUM("pending", "running", "done", "failed", "stale", name="run_status", create_type=False)
+SessionMode = ENUM("drill", "exam", name="session_mode", create_type=False)
+TurnStatus = ENUM(
+    "pending", "recorded", "transcribed", "graded", "skipped", name="turn_status", create_type=False,
+)
 
 
 class Document(Base):
@@ -47,12 +59,12 @@ class AnalysisRun(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     document_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), sa.ForeignKey("documents.id", ondelete="CASCADE"))
-    stage: Mapped[str] = mapped_column(sa.Text)
+    stage: Mapped[str] = mapped_column(PipelineStage)
     cache_key: Mapped[str] = mapped_column(sa.Text)
     prompt_version: Mapped[str] = mapped_column(sa.Text)
     model: Mapped[str] = mapped_column(sa.Text)
     params_hash: Mapped[str] = mapped_column(sa.Text)
-    status: Mapped[str] = mapped_column(sa.Text, default="pending")
+    status: Mapped[str] = mapped_column(RunStatus, default="pending")
     input_tokens: Mapped[int] = mapped_column(default=0)
     output_tokens: Mapped[int] = mapped_column(default=0)
     cost_usd: Mapped[Optional[Decimal]] = mapped_column(sa.Numeric(10, 4), default=0)
@@ -139,7 +151,7 @@ class Session(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     document_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), sa.ForeignKey("documents.id", ondelete="CASCADE"))
-    mode: Mapped[str] = mapped_column(sa.Text)
+    mode: Mapped[str] = mapped_column(SessionMode)
     config: Mapped[dict] = mapped_column(JSONB, default=dict)
     started_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), server_default=sa.func.now())
     ended_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
@@ -153,7 +165,7 @@ class Turn(Base):
     session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), sa.ForeignKey("sessions.id", ondelete="CASCADE"))
     question_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), sa.ForeignKey("questions.id", ondelete="CASCADE"))
     ordinal: Mapped[int]
-    status: Mapped[str] = mapped_column(sa.Text, default="pending")
+    status: Mapped[str] = mapped_column(TurnStatus, default="pending")
     is_follow_up: Mapped[bool] = mapped_column(default=False)
     parent_turn_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), sa.ForeignKey("turns.id", ondelete="SET NULL"))
 

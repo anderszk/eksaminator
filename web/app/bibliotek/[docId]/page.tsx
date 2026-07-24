@@ -121,10 +121,10 @@ export default function BibliotekPage({ params }: { params: Promise<{ docId: str
           <>
             {/* Uncertainties banner */}
             {map?.usikkert && (map.usikkert as string[]).length > 0 && (
-              <div style={{ marginBottom: 24, padding: "12px 16px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "var(--radius)", fontSize: 13 }}>
-                <strong style={{ color: "#92400e" }}>Gjennomgå:</strong>
+              <div className="banner banner-warning" style={{ marginBottom: 24, display: "block" }}>
+                <strong>Gjennomgå:</strong>
                 <ul style={{ margin: "6px 0 0 16px" }}>
-                  {(map.usikkert as string[]).map((u, i) => <li key={i} style={{ color: "#78350f" }}>{u}</li>)}
+                  {(map.usikkert as string[]).map((u, i) => <li key={i}>{u}</li>)}
                 </ul>
               </div>
             )}
@@ -246,10 +246,10 @@ function SummaryCard({ summary }: { summary: Summary }) {
 
 function ClaimCard({ claim }: { claim: Claim }) {
   const typeColors: Record<string, string> = {
-    empirisk:  "#dbeafe",
-    metodisk:  "#dcfce7",
-    tolkning:  "#fef9c3",
-    teoretisk: "#f3e8ff",
+    empirisk:  "#E7EAF7",
+    metodisk:  "#E4F0E5",
+    tolkning:  "#FBF0DA",
+    teoretisk: "#EDE7F5",
   };
   return (
     <div className="card" style={{ padding: "14px 16px", display: "flex", alignItems: "flex-start", gap: 12 }}>
@@ -267,7 +267,7 @@ function ClaimCard({ claim }: { claim: Claim }) {
 }
 
 function StrengthDot({ strength }: { strength: number }) {
-  const colors = ["", "#ef4444", "#f97316", "#eab308", "#84cc16", "#22c55e"];
+  const colors = ["", "var(--score-0)", "var(--score-1)", "var(--score-2)", "var(--score-3)", "var(--score-4)"];
   return (
     <div style={{
       width: 28,
@@ -289,8 +289,8 @@ function StrengthDot({ strength }: { strength: number }) {
 }
 
 function VulnCard({ vuln, docId, open, onToggle }: { vuln: Vulnerability; docId: string; open: boolean; onToggle: () => void }) {
-  const sevBg = ["", "#f0fdf4", "#fefce8", "#fff7ed", "#fef2f2", "#fef2f2"];
-  const sevColor = ["", "#15803d", "#a16207", "#c2410c", "#b91c1c", "#7f1d1d"];
+  const sevBg = ["", "var(--sev-1)", "var(--sev-2)", "var(--sev-3)", "var(--sev-4)", "var(--sev-5)"];
+  const sevColor = ["", "var(--sev-1-ink)", "var(--sev-2-ink)", "var(--sev-3-ink)", "var(--sev-4-ink)", "var(--sev-5-ink)"];
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", overflow: "hidden", background: sevBg[vuln.severity] ?? "var(--bg-card)" }}>
       <button

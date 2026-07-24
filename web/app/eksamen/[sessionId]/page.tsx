@@ -132,7 +132,7 @@ export default function EksamenPage({ params }: { params: Promise<{ sessionId: s
       )}
 
       {phase === "error" && (
-        <div style={{ color: "#f87171", textAlign: "center" }}>
+        <div style={{ color: "#E8918A", textAlign: "center" }}>
           <div style={{ fontSize: 24, marginBottom: 12 }}>!</div>
           <div>{nb.errors.mic}</div>
         </div>
@@ -145,7 +145,7 @@ export default function EksamenPage({ params }: { params: Promise<{ sessionId: s
             <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>
               Spørsmål {questionCount}
             </div>
-            <div className="mono" style={{ fontSize: 20, fontWeight: 500, color: elapsed > EXAM_DURATION_MINUTES * 60 ? "#f87171" : "rgba(255,255,255,0.7)" }}>
+            <div className="mono" style={{ fontSize: 20, fontWeight: 500, color: elapsed > EXAM_DURATION_MINUTES * 60 ? "#E8918A" : "rgba(255,255,255,0.7)" }}>
               {fmtElapsed(elapsed)}
             </div>
             <button
@@ -176,8 +176,8 @@ export default function EksamenPage({ params }: { params: Promise<{ sessionId: s
                 borderRadius: "50%",
                 border: "none",
                 cursor: isUploading ? "default" : "pointer",
-                background: isRecording ? "#2563eb" : "rgba(255,255,255,0.08)",
-                boxShadow: isRecording ? "0 0 0 12px rgba(37,99,235,0.2), 0 0 0 24px rgba(37,99,235,0.08)" : "none",
+                background: isRecording ? "#8A90E8" : "rgba(255,255,255,0.08)",
+                boxShadow: isRecording ? "0 0 0 12px rgba(138,144,232,0.2), 0 0 0 24px rgba(138,144,232,0.08)" : "none",
                 transition: "all 0.3s",
                 display: "flex",
                 alignItems: "center",

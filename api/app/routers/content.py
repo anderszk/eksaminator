@@ -168,42 +168,53 @@ async def get_question_audio(question_id: uuid.UUID, db: AsyncSession = Depends(
     return {"url": url}
 
 
+def _chapter_of(source_refs: Optional[list]) -> str:
+    if not source_refs:
+        return "Ukjent"
+    path = source_refs[0].get("section_path") if isinstance(source_refs[0], dict) else None
+    if not path:
+        return "Ukjent"
+    return path.split(">")[0].strip()
+
+
 @router.get("/stats/coverage")
 async def stats_coverage(document_id: Optional[uuid.UUID] = None, db: AsyncSession = Depends(get_db)):
     if not document_id:
-        return {"coverage": {}}
+        return {"coverage": []}
 
-    # All questions by category
+    # All questions — chapter × category grid, including unattempted cells
     q_result = await db.execute(
-        select(Question.category, func.count(Question.id).label("total"))
+        select(Question.id, Question.category, Question.source_refs)
         .where(Question.document_id == document_id, Question.retired == False)  # noqa: E712
-        .group_by(Question.category)
     )
-    totals = {row.category: row.total for row in q_result}
+    cells: dict[tuple[str, str], dict] = {}
+    for row in q_result:
+        key = (_chapter_of(row.source_refs), row.category)
+        cells.setdefault(key, {"total": 0, "scores": []})["total"] += 1
 
-    # Mean scores per category (from graded turns)
+    # Mean scores per (chapter, category), from graded turns
     score_result = await db.execute(
-        select(Question.category, Turn.scores)
+        select(Question.category, Question.source_refs, Turn.scores)
         .join(Turn, Turn.question_id == Question.id)
         .where(Question.document_id == document_id, Turn.status == "graded")
     )
-    rows = score_result.all()
+    for row in score_result:
+        if not row.scores:
+            continue
+        key = (_chapter_of(row.source_refs), row.category)
+        vals = list(row.scores.values())
+        mean = sum(vals) / len(vals) if vals else 0
+        cells.setdefault(key, {"total": 0, "scores": []})["scores"].append(mean)
 
-    category_scores: dict[str, list[float]] = {}
-    for row in rows:
-        if row.scores:
-            vals = list(row.scores.values())
-            mean = sum(vals) / len(vals) if vals else 0
-            category_scores.setdefault(row.category, []).append(mean)
-
-    coverage = {}
-    for cat, total in totals.items():
-        scores = category_scores.get(cat, [])
-        coverage[cat] = {
-            "total": total,
-            "attempted": len(scores),
-            "mean_score": round(sum(scores) / len(scores), 2) if scores else None,
+    coverage = [
+        {
+            "chapter": chapter,
+            "category": category,
+            "attempts": len(cell["scores"]),
+            "mean_score": round(sum(cell["scores"]) / len(cell["scores"]), 2) if cell["scores"] else None,
         }
+        for (chapter, category), cell in cells.items()
+    ]
 
     return {"document_id": str(document_id), "coverage": coverage}
 
@@ -258,43 +269,42 @@ async def stats_weakest(
 @router.get("/stats/progress")
 async def stats_progress(document_id: Optional[uuid.UUID] = None, db: AsyncSession = Depends(get_db)):
     if not document_id:
-        return {"sessions": []}
+        return {"progress": []}
 
     from app.models.models import Session as SessionModel
 
     result = await db.execute(
-        select(SessionModel)
+        select(SessionModel.id, SessionModel.started_at)
         .where(SessionModel.document_id == document_id)
         .order_by(SessionModel.started_at)
     )
-    sessions = result.scalars().all()
+    sessions = result.all()
 
-    progress = []
+    days: dict[str, dict] = {}
     for s in sessions:
         turns_result = await db.execute(
-            select(Turn).where(Turn.session_id == s.id, Turn.status == "graded")
+            select(Turn.scores).where(Turn.session_id == s.id, Turn.status == "graded")
         )
-        turns = turns_result.scalars().all()
-        if not turns:
+        scores = [row.scores for row in turns_result if row.scores]
+        if not scores:
             continue
-        all_scores = []
-        total_wpm = []
-        for t in turns:
-            if t.scores:
-                vals = list(t.scores.values())
-                all_scores.append(sum(vals) / len(vals))
-            if t.wpm:
-                total_wpm.append(t.wpm)
-        progress.append({
-            "session_id": str(s.id),
-            "mode": s.mode,
-            "started_at": s.started_at.isoformat(),
-            "questions": len(turns),
-            "mean_score": round(sum(all_scores) / len(all_scores), 2) if all_scores else None,
-            "mean_wpm": round(sum(total_wpm) / len(total_wpm), 1) if total_wpm else None,
-        })
+        date_key = s.started_at.date().isoformat()
+        day = days.setdefault(date_key, {"scores": [], "sessions": set()})
+        day["sessions"].add(s.id)
+        for sc in scores:
+            vals = list(sc.values())
+            day["scores"].append(sum(vals) / len(vals))
 
-    return {"document_id": str(document_id), "sessions": progress}
+    progress = [
+        {
+            "date": date_key,
+            "mean_score": round(sum(day["scores"]) / len(day["scores"]), 2),
+            "session_count": len(day["sessions"]),
+        }
+        for date_key, day in sorted(days.items())
+    ]
+
+    return {"document_id": str(document_id), "progress": progress}
 
 
 @router.get("/plan")

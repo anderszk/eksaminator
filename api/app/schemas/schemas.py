@@ -24,6 +24,10 @@ class DocumentUploadOut(BaseModel):
     existing: bool
 
 
+class DocumentRenameIn(BaseModel):
+    title: str
+
+
 class AnalysisRunOut(BaseModel):
     id: uuid.UUID
     document_id: uuid.UUID

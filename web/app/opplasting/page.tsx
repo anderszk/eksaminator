@@ -58,14 +58,10 @@ export default function OpplastingPage() {
       const res = await api.documents.upload(file) as any;
       setDocId(res.id);
 
-      if (res.existing) {
-        // Already fully analysed — go straight to library
-        router.push(`/bibliotek/${res.id}`);
-        return;
-      }
-
-      // Trigger all pipeline stages
-      await api.pipeline.run(res.id);
+      // Force a full, fresh pipeline run — an explicit upload means "(re)process this
+      // now", regardless of any cached results. Caching exists so navigating around
+      // the app doesn't re-trigger analysis, not to make uploads a no-op.
+      await api.pipeline.run(res.id, undefined, true);
       setPhase("analysing");
 
       pollRef.current = setInterval(async () => {
@@ -153,7 +149,7 @@ export default function OpplastingPage() {
           </div>
 
           {error && (
-            <div style={{ marginTop: 12, padding: "10px 14px", background: "#fee2e2", borderRadius: "var(--radius)", color: "#991b1b", fontSize: 13 }}>
+            <div className="banner banner-error" style={{ marginTop: 12 }}>
               {error}
             </div>
           )}
@@ -222,26 +218,18 @@ export default function OpplastingPage() {
           </div>
 
           {phase === "done" && (
-            <div className="fade-up" style={{
+            <div className="banner banner-success fade-up" style={{
               marginTop: 20,
               padding: "14px 18px",
-              background: "#dcfce7",
-              border: "1px solid #bbf7d0",
-              borderRadius: "var(--radius)",
-              color: "#14532d",
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              fontSize: 14,
               fontWeight: 500,
             }}>
-              <CheckIcon color="#15803d" />
+              <CheckIcon color="var(--success-ink)" />
               Analyse ferdig. Tar deg til biblioteket…
             </div>
           )}
 
           {phase === "error" && error && (
-            <div style={{ marginTop: 16, padding: "12px 16px", background: "#fee2e2", borderRadius: "var(--radius)", color: "#991b1b", fontSize: 14 }}>
+            <div className="banner banner-error" style={{ marginTop: 16 }}>
               {error}
             </div>
           )}

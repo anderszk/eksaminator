@@ -1,9 +1,23 @@
 // Typed API client for the FastAPI backend.
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+export interface Document { id: string; filename: string; uploaded_at: string; page_count: number; title?: string | null }
+
+export interface SessionSummary {
+  id: string;
+  document_id: string;
+  mode: "drill" | "exam";
+  started_at: string;
+  ended_at: string | null;
+  question_count: number;
+  graded_count: number;
+  mean_score: number | null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, init);
   if (!res.ok) throw new Error(`API ${res.status}: ${path}`);
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -11,12 +25,16 @@ export const api = {
   health: () => request<{ status: string }>("/health"),
 
   documents: {
+    list: () => request<Document[]>("/documents"),
     upload: (file: File) => {
       const fd = new FormData();
       fd.append("file", file);
       return request("/documents", { method: "POST", body: fd });
     },
     get: (id: string) => request(`/documents/${id}`),
+    rename: (id: string, title: string) =>
+      request<Document>(`/documents/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) }),
+    delete: (id: string) => request<void>(`/documents/${id}`, { method: "DELETE" }),
   },
 
   pipeline: {
@@ -34,6 +52,7 @@ export const api = {
   },
 
   sessions: {
+    list: (docId: string) => request<SessionSummary[]>(`/sessions?document_id=${docId}`),
     create: (body: object) =>
       request("/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
     get: (id: string) => request(`/sessions/${id}`),

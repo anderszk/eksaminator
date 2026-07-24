@@ -22,7 +22,7 @@ export default function Nav() {
       left: 0,
       right: 0,
       height: "56px",
-      background: "rgba(250,250,247,0.88)",
+      background: "rgba(250,249,245,0.88)",
       backdropFilter: "blur(12px)",
       WebkitBackdropFilter: "blur(12px)",
       borderBottom: "1px solid var(--border)",

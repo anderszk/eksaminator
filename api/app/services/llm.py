@@ -43,20 +43,19 @@ async def complete(
     for attempt in range(3):
         try:
             def _call():
-                messages = []
-                if system:
-                    messages.append({"role": "system", "content": system})
-                messages.append({"role": "user", "content": prompt})
-                return client.chat.completions.create(
+                kwargs: dict = dict(
                     model=settings.llm_model,
-                    max_completion_tokens=mt,
-                    messages=messages,
+                    input=prompt,
+                    max_output_tokens=mt,
                 )
+                if system:
+                    kwargs["instructions"] = system
+                return client.responses.create(**kwargs)
 
             resp = await asyncio.to_thread(_call)
-            text = resp.choices[0].message.content
-            inp = resp.usage.prompt_tokens
-            out = resp.usage.completion_tokens
+            text = resp.output_text
+            inp = resp.usage.input_tokens
+            out = resp.usage.output_tokens
             cost = _cost(inp, out)
             logger.info("LLM call: %d in / %d out / $%.4f", inp, out, cost)
             return text, inp, out, cost

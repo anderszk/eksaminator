@@ -217,7 +217,7 @@ export default function Recorder({ turnId, onDone, timeLimit = 90 }: Props) {
             background: state === "recording"
               ? "var(--accent)"
               : state === "armed"
-              ? "#f0f0ec"
+              ? "var(--bg-hover)"
               : "var(--bg-card)",
             boxShadow: state === "recording"
               ? "var(--accent-glow), var(--shadow-md)"

@@ -152,12 +152,11 @@ async def _stage_ingest(db: AsyncSession, doc: Document, run: AnalysisRun) -> tu
     doc.char_count = extracted["char_count"]
     await db.commit()
 
-    # Embed all text chunks
-    chunk_texts = [c["text"] for c in extracted["chunks"]]
-    all_embeddings = await embeddings.embed(chunk_texts) if chunk_texts else []
-
-    # Insert chunks
-    for i, (chunk_data, emb) in enumerate(zip(extracted["chunks"], all_embeddings)):
+    # Insert chunks. No embedding here — nothing queries Chunk.embedding for
+    # retrieval; the LLM stages get the full extracted text directly (see
+    # _stage_structure/_stage_claims/_stage_summaries). embeddings.embed() is
+    # still used elsewhere, for in-memory question dedup in _dedupe_questions.
+    for chunk_data in extracted["chunks"]:
         chunk = Chunk(
             document_id=doc.id,
             ordinal=chunk_data["ordinal"],
@@ -167,7 +166,6 @@ async def _stage_ingest(db: AsyncSession, doc: Document, run: AnalysisRun) -> tu
             kind=chunk_data["kind"],
             text=chunk_data["text"],
             token_count=chunk_data["token_count"],
-            embedding=emb,
         )
         db.add(chunk)
 
@@ -191,7 +189,7 @@ async def _stage_structure(db: AsyncSession, doc: Document, run: AnalysisRun) ->
         select(Chunk).where(Chunk.document_id == doc.id).order_by(Chunk.ordinal)
     )
     chunks = result.scalars().all()
-    full_text = "\n\n".join(c.text for c in chunks)[:120_000]  # stay in context window
+    full_text = "\n\n".join(c.text for c in chunks)  # llm_model has a ~1M-token context window
 
     prompt_template = llm.load_prompt("s2_structure.md")
     prompt = prompt_template.replace("{{full_text}}", full_text)
@@ -201,7 +199,7 @@ async def _stage_structure(db: AsyncSession, doc: Document, run: AnalysisRun) ->
         prompt,
         system="You are an expert academic analyst. Return only valid JSON.",
         schema_hint=schema,
-        max_tokens=6000,
+        max_tokens=10000,
     )
 
     # Save thesis_map
@@ -232,7 +230,7 @@ async def _stage_claims(db: AsyncSession, doc: Document, run: AnalysisRun) -> tu
     chunks_text = "\n\n---\n\n".join(
         f"[Side {c.page_start}, {c.section_path or 'ukjent seksjon'}]\n{c.text}"
         for c in chunks
-    )[:100_000]
+    )
 
     prompt_template = llm.load_prompt("s3_claims.md")
     prompt = prompt_template.replace("{{chunks_text}}", chunks_text)
@@ -241,7 +239,7 @@ async def _stage_claims(db: AsyncSession, doc: Document, run: AnalysisRun) -> tu
         prompt,
         system="You are an expert academic analyst. Return only a valid JSON array.",
         schema_hint='[{"text": "...", "claim_type": "empirisk", "evidence_refs": [...], "strength": 3}]',
-        max_tokens=8000,
+        max_tokens=16000,
     )
 
     if isinstance(claims_data, dict):
@@ -293,7 +291,7 @@ async def _stage_vulnerabilities(db: AsyncSession, doc: Document, run: AnalysisR
         prompt,
         system="You are an experienced external examiner. Return only a valid JSON array.",
         schema_hint='[{"checklist_key": "...", "description": "...", "severity": 4, "attack_angle": "...", "best_defence": "..."}]',
-        max_tokens=8000,
+        max_tokens=12000,
     )
 
     if isinstance(vulns_data, dict):
@@ -332,15 +330,15 @@ async def _stage_questions(db: AsyncSession, doc: Document, run: AnalysisRun) ->
 
     prompt_template = llm.load_prompt("s5_questions.md")
     prompt = prompt_template \
-        .replace("{{structure_map}}", json.dumps(structure_map, ensure_ascii=False)[:20000]) \
-        .replace("{{claims}}", json.dumps([{"text": c.text, "claim_type": c.claim_type, "strength": c.strength} for c in claims], ensure_ascii=False)[:15000]) \
-        .replace("{{vulnerabilities}}", json.dumps([{"checklist_key": v.checklist_key, "description": v.description, "severity": v.severity, "attack_angle": v.attack_angle} for v in vulns], ensure_ascii=False)[:15000])
+        .replace("{{structure_map}}", json.dumps(structure_map, ensure_ascii=False)) \
+        .replace("{{claims}}", json.dumps([{"text": c.text, "claim_type": c.claim_type, "strength": c.strength} for c in claims], ensure_ascii=False)) \
+        .replace("{{vulnerabilities}}", json.dumps([{"checklist_key": v.checklist_key, "description": v.description, "severity": v.severity, "attack_angle": v.attack_angle} for v in vulns], ensure_ascii=False))
 
     questions_data, inp, out, cost = await llm.complete_json(
         prompt,
         system="You are an expert in Norwegian university oral examinations. Return only a valid JSON array.",
         schema_hint='[{"category": "...", "difficulty": 1, "text": "...", "why_asked": "...", "expected_shape": "direkte", "source_refs": [...], "follow_ups": [...]}]',
-        max_tokens=settings.llm_max_tokens,
+        max_tokens=20000,
     )
 
     if isinstance(questions_data, dict):
@@ -473,7 +471,7 @@ async def _stage_summaries(db: AsyncSession, doc: Document, run: AnalysisRun) ->
         select(Chunk).where(Chunk.document_id == doc.id).order_by(Chunk.ordinal)
     )
     chunks = chunks_result.scalars().all()
-    full_text = "\n\n".join(c.text for c in chunks[:80])[:60_000]
+    full_text = "\n\n".join(c.text for c in chunks)
 
     prompt_template = llm.load_prompt("s7_summaries.md")
     prompt = prompt_template \
@@ -484,7 +482,7 @@ async def _stage_summaries(db: AsyncSession, doc: Document, run: AnalysisRun) ->
         prompt,
         system="You are an expert in pharmacy education. Return only a valid JSON object.",
         schema_hint='{"spine": {...}, "chapters": [...], "concepts": [...], "figures": [...]}',
-        max_tokens=8000,
+        max_tokens=24000,
     )
 
     ordinal = 0
@@ -545,9 +543,43 @@ STAGE_MAP = {
 }
 
 
-async def run_pipeline_stage(ctx, *, doc_id: str, stage: str, upstream_keys: list[str] | None = None, force: bool = False):
+async def on_startup(ctx):
+    """A 'running' AnalysisRun can only be orphaned at process start — arq jobs
+    don't survive a worker restart, so nothing legitimate can still be in that
+    state. Left alone, an orphaned row would permanently block re-runs via the
+    /pipeline/{doc_id}/run concurrency guard, which treats 'running' as busy."""
+    sf = _get_sf()
+    async with sf() as db:
+        result = await db.execute(update(AnalysisRun).where(AnalysisRun.status == "running").values(
+            status="failed", error="orphaned: worker restarted mid-job"
+        ))
+        if result.rowcount:
+            logger.warning("Marked %d orphaned 'running' analysis run(s) as failed on startup", result.rowcount)
+        await db.commit()
+
+
+async def run_pipeline_stage(
+    ctx,
+    *,
+    doc_id: str,
+    stage: str,
+    remaining_stages: list[str] | None = None,
+    upstream_keys: list[str] | None = None,
+    force: bool = False,
+):
     logger.info("stage=%s doc=%s start", stage, doc_id)
     sf = _get_sf()
+
+    async def _enqueue_next():
+        if remaining_stages:
+            next_stage, *rest = remaining_stages
+            await ctx["redis"].enqueue_job(
+                "run_pipeline_stage",
+                doc_id=doc_id,
+                stage=next_stage,
+                remaining_stages=rest,
+                force=force,
+            )
 
     params = {"stage": stage, "prompt_version": settings.prompt_version}
     ph = _params_hash(params)
@@ -560,6 +592,7 @@ async def run_pipeline_stage(ctx, *, doc_id: str, stage: str, upstream_keys: lis
             cached = await _check_cache(db, ck)
             if cached:
                 logger.info("stage=%s doc=%s CACHE HIT run=%s", stage, doc_id, cached.id)
+                await _enqueue_next()
                 return str(cached.id)
 
         run = await _create_run(db, doc_id, stage, ck, ph)
@@ -592,6 +625,7 @@ async def run_pipeline_stage(ctx, *, doc_id: str, stage: str, upstream_keys: lis
                     ))
                 await db.commit()
 
+        await _enqueue_next()
         return run_id
 
     except Exception as exc:

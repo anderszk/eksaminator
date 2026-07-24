@@ -11,11 +11,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db import get_db
 from app.models.models import Document
-from app.schemas.schemas import DocumentOut, DocumentUploadOut
+from app.schemas.schemas import DocumentOut, DocumentRenameIn, DocumentUploadOut
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 MAX_SIZE = 50 * 1024 * 1024  # 50 MB
+
+
+@router.get("", response_model=list[DocumentOut])
+async def list_documents(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Document).order_by(Document.uploaded_at.desc()))
+    return result.scalars().all()
 
 
 def _s3():
@@ -94,6 +100,23 @@ async def get_document_pdf_url(doc_id: uuid.UUID, db: AsyncSession = Depends(get
         )
     )
     return {"url": url}
+
+
+@router.patch("/{doc_id}", response_model=DocumentOut)
+async def rename_document(doc_id: uuid.UUID, body: DocumentRenameIn, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Document).where(Document.id == doc_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Dokument ikke funnet.")
+
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(400, "Tittel kan ikke være tom.")
+
+    doc.title = title
+    await db.commit()
+    await db.refresh(doc)
+    return doc
 
 
 @router.delete("/{doc_id}", status_code=204)

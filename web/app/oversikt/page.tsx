@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { api, Document } from "@/lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -11,7 +12,6 @@ async function apiFetch(path: string) {
   return r.json();
 }
 
-interface Document { id: string; filename: string; uploaded_at: string; page_count: number }
 interface WeakestQ { id: string; text: string; category: string; difficulty: number; mean_score: number; attempts: number }
 interface Coverage { chapter: string; category: string; mean_score: number | null; attempts: number }
 interface Progress { date: string; mean_score: number; session_count: number }
@@ -23,7 +23,7 @@ const CAT_SHORT: Record<string, string> = {
   statistikk:"Stat.",validitet:"Val.",alternativ:"Alt.",relevans:"Rel.",grunnlag:"Grunn.",kritisk:"Krit.",
 };
 const KIND_COLORS: Record<string, string> = {
-  lesing: "#dbeafe", analyse: "#f3e8ff", muntlig: "#dcfce7", mock: "#fef9c3", hvile: "#f1f5f9",
+  lesing: "#E7EAF7", analyse: "#EDE7F5", muntlig: "#E4F0E5", mock: "#FBF0DA", hvile: "#F4F2ED",
 };
 
 export default function OversiktPage() {
@@ -34,14 +34,42 @@ export default function OversiktPage() {
   const [progress, setProgress] = useState<Progress[]>([]);
   const [plan, setPlan] = useState<PlanItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const loadDocs = useCallback((preferId?: string) => {
+    return api.documents.list().then((list: Document[]) => {
+      setDocs(list);
+      if (list.length === 0) { setActiveDoc(null); return; }
+      if (preferId && list.some(d => d.id === preferId)) setActiveDoc(preferId);
+      else setActiveDoc(prev => (prev && list.some(d => d.id === prev)) ? prev : list[0].id);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
-    apiFetch("/documents").then((data: any) => {
-      const list: Document[] = Array.isArray(data) ? data : data.documents ?? [];
-      setDocs(list);
-      if (list.length > 0) setActiveDoc(list[0].id);
-    }).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+    loadDocs().finally(() => setLoading(false));
+  }, [loadDocs]);
+
+  const startRename = (d: Document) => { setRenamingId(d.id); setRenameValue(d.title ?? d.filename); };
+  const cancelRename = () => { setRenamingId(null); setRenameValue(""); };
+
+  const submitRename = async () => {
+    const id = renamingId;
+    const title = renameValue.trim();
+    if (!id || !title) { cancelRename(); return; }
+    try {
+      await api.documents.rename(id, title);
+      await loadDocs(activeDoc ?? undefined);
+    } finally {
+      cancelRename();
+    }
+  };
+
+  const handleDelete = async (d: Document) => {
+    if (!confirm(`Slette «${d.title ?? d.filename}»? Dette fjerner all analyse og treningshistorikk for oppgaven.`)) return;
+    await api.documents.delete(d.id);
+    await loadDocs();
+  };
 
   useEffect(() => {
     if (!activeDoc) return;
@@ -92,19 +120,49 @@ export default function OversiktPage() {
   return (
     <main className="page-wide">
       {/* Doc selector */}
-      {docs.length > 1 && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
-          {docs.map(d => (
-            <button
+      <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
+        {docs.map(d => (
+          renamingId === d.id ? (
+            <input
+              key={d.id}
+              autoFocus
+              className="btn btn-sm"
+              style={{ background: "var(--bg-card)", border: "1px solid var(--border-strong)", minWidth: 160 }}
+              value={renameValue}
+              onChange={e => setRenameValue(e.target.value)}
+              onBlur={submitRename}
+              onKeyDown={e => {
+                if (e.key === "Enter") { e.currentTarget.blur(); }
+                if (e.key === "Escape") cancelRename();
+              }}
+            />
+          ) : (
+            <div
               key={d.id}
               className={`btn ${activeDoc === d.id ? "btn-primary" : "btn-secondary"} btn-sm`}
-              onClick={() => setActiveDoc(d.id)}
+              style={{ gap: 8, paddingRight: 6 }}
             >
-              {d.filename}
-            </button>
-          ))}
-        </div>
-      )}
+              <span style={{ cursor: "pointer" }} onClick={() => setActiveDoc(d.id)}>
+                {d.title ?? d.filename}
+              </span>
+              <button
+                title="Gi nytt navn"
+                onClick={() => startRename(d)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", opacity: 0.6, padding: 2, display: "flex" }}
+              >
+                <PencilIcon />
+              </button>
+              <button
+                title="Slett"
+                onClick={() => handleDelete(d)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", opacity: 0.6, padding: 2, display: "flex" }}
+              >
+                <TrashIcon />
+              </button>
+            </div>
+          )
+        ))}
+      </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
 
@@ -215,14 +273,14 @@ export default function OversiktPage() {
                 }}>
                   <div style={{
                     padding: "6px 8px",
-                    background: allDone ? "#dcfce7" : "var(--bg-elevated)",
+                    background: allDone ? "var(--success-bg)" : "var(--bg-elevated)",
                     borderBottom: "1px solid var(--border)",
                     display: "flex",
                     alignItems: "center",
                     gap: 4,
                   }}>
                     <span style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-muted)" }}>Dag {day + 1}</span>
-                    {allDone && <span style={{ fontSize: 10, color: "#15803d" }}>✓</span>}
+                    {allDone && <span style={{ fontSize: 10, color: "var(--success-ink)" }}>✓</span>}
                   </div>
                   <div style={{ padding: "6px 8px" }}>
                     {items.map(item => (
@@ -270,14 +328,30 @@ export default function OversiktPage() {
   );
 }
 
+function PencilIcon() {
+  return (
+    <svg width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 2l3 3-8 8-3.5 1L3.5 11z" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width={12} height={12} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2.5 4h11M6 4V2.5h4V4M5 4l.5 9.5a1 1 0 0 0 1 .95h3a1 1 0 0 0 1-.95L11 4" />
+    </svg>
+  );
+}
+
 function HeatCell({ score, attempts }: { score: number | null; attempts: number }) {
   if (score === null || attempts === 0) {
     return <div className="heatmap-cell" style={{ background: "var(--bg-elevated)", width: 40, height: 40 }} />;
   }
   const pct = score / 4;
   const hue = pct * 120; // 0 (red) → 120 (green)
-  const bg = `hsl(${hue}, 65%, 88%)`;
-  const fg = `hsl(${hue}, 50%, 35%)`;
+  const bg = `hsl(${hue}, 42%, 91%)`;
+  const fg = `hsl(${hue}, 40%, 38%)`;
   return (
     <div
       className="heatmap-cell mono"
@@ -303,7 +377,7 @@ function HeatmapLegend() {
 }
 
 function ScorePill({ score }: { score: number }) {
-  const color = score < 1.5 ? "#ef4444" : score < 2.5 ? "#eab308" : score < 3.5 ? "#84cc16" : "#22c55e";
+  const color = score < 1.5 ? "var(--score-0)" : score < 2.5 ? "var(--score-2)" : score < 3.5 ? "var(--score-3)" : "var(--score-4)";
   return (
     <span className="mono" style={{ fontSize: 12, fontWeight: 700, color, flexShrink: 0 }}>{score.toFixed(1)}</span>
   );

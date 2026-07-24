@@ -1,71 +1,94 @@
 @import "tailwindcss";
 
-/* ─── Design tokens (spec §9.7 — instrument-panel aesthetic) ─── */
+/* ─── Design tokens — soft pastel, minimal aesthetic ─── */
 :root {
-  --bg:            #FAFAF7;
+  --bg:            #FAF9F5;
   --bg-card:       #ffffff;
-  --bg-elevated:   #f4f4f0;
-  --bg-hover:      #f0f0ec;
+  --bg-elevated:   #F4F2ED;
+  --bg-hover:      #EDEAE3;
 
-  --ink:           #1a1a18;
-  --ink-muted:     #5c5c57;
-  --ink-faint:     #9e9e98;
+  --ink:           #2B2830;
+  --ink-muted:     #6B6772;
+  --ink-faint:     #A29CAA;
 
-  --border:        #e2e2dc;
-  --border-strong: #c8c8c0;
+  --border:        #E7E3EC;
+  --border-strong: #D2CCDC;
 
-  /* Accent: ONLY for the recording-active state */
-  --accent:        #2563eb;
-  --accent-dim:    rgba(37, 99, 235, 0.12);
-  --accent-glow:   0 0 0 4px rgba(37, 99, 235, 0.15);
+  /* Accent: pastel periwinkle. --accent for glows/dim washes, --accent-strong for solid buttons/text */
+  --accent:        #8A90E8;
+  --accent-strong: #5C61C9;
+  --accent-dim:    rgba(138, 144, 232, 0.14);
+  --accent-glow:   0 0 0 4px rgba(138, 144, 232, 0.20);
 
   /* Timer ring colours */
-  --timer-ok:      #16a34a;
-  --timer-amber:   #d97706;
-  --timer-danger:  #dc2626;
+  --timer-ok:      #4E9B6B;
+  --timer-amber:   #C99A3D;
+  --timer-danger:  #C15048;
 
-  /* Score bars */
-  --score-0:       #ef4444;
-  --score-1:       #f97316;
-  --score-2:       #eab308;
-  --score-3:       #84cc16;
-  --score-4:       #22c55e;
+  /* Score scale (0 worst → 4 best) — dusty pastel, always paired with a numeric label */
+  --score-0:       #D9645C;
+  --score-1:       #E2916A;
+  --score-2:       #D0A34C;
+  --score-3:       #9AB868;
+  --score-4:       #4E9B6B;
 
-  /* Severity */
-  --sev-1:         #dcfce7;
-  --sev-2:         #fef9c3;
-  --sev-3:         #fed7aa;
-  --sev-4:         #fecaca;
-  --sev-5:         #fca5a5;
+  /* Severity (1 low → 5 high) — pastel wash + readable ink pair */
+  --sev-1:         #E4F0E5;
+  --sev-1-ink:     #3D7A54;
+  --sev-2:         #F7F1DC;
+  --sev-2-ink:     #8A6A24;
+  --sev-3:         #FBEEDD;
+  --sev-3-ink:     #A16A3C;
+  --sev-4:         #FBE3DD;
+  --sev-4-ink:     #B0463C;
+  --sev-5:         #F6D3D0;
+  --sev-5-ink:     #8F332B;
 
-  --radius-sm:     4px;
-  --radius:        8px;
-  --radius-lg:     14px;
-  --radius-xl:     20px;
+  /* Status banners — pastel wash + readable ink pair, always shown with icon/label */
+  --success-bg:    #E4F0E5;
+  --success-ink:   #3D7A54;
+  --warning-bg:    #FBF0DA;
+  --warning-ink:   #96631C;
+  --error-bg:      #FBE7E5;
+  --error-ink:     #B0463C;
+  --info-bg:       #E7EAF7;
+  --info-ink:      #4A4FA8;
+
+  --radius-sm:     6px;
+  --radius:        10px;
+  --radius-lg:     16px;
+  --radius-xl:     24px;
   --radius-full:   9999px;
 
-  --shadow-sm:     0 1px 2px rgba(0,0,0,.05);
-  --shadow:        0 1px 4px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.04);
-  --shadow-md:     0 4px 12px rgba(0,0,0,.09), 0 2px 4px rgba(0,0,0,.05);
-  --shadow-lg:     0 8px 24px rgba(0,0,0,.11), 0 4px 8px rgba(0,0,0,.06);
+  --shadow-sm:     0 1px 2px rgba(43,40,48,.04);
+  --shadow:        0 2px 8px rgba(43,40,48,.06), 0 1px 2px rgba(43,40,48,.03);
+  --shadow-md:     0 6px 16px rgba(43,40,48,.08), 0 2px 4px rgba(43,40,48,.04);
+  --shadow-lg:     0 12px 32px rgba(43,40,48,.10), 0 4px 8px rgba(43,40,48,.05);
 
   --transition:    150ms ease;
   --transition-md: 250ms ease;
 }
 
-/* ─── Reset / Base ─── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* ─── Reset / Base ───
+   Layered under Tailwind's `base` so utility classes (p-*, m-*, space-y-*, …)
+   — which Tailwind emits into `utilities`, ordered after `base` — can override
+   it. Unlayered CSS always beats layered CSS regardless of specificity, so
+   without this, this reset would silently defeat every margin/padding utility
+   in the app. */
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { -webkit-text-size-adjust: 100%; }
+  html { -webkit-text-size-adjust: 100%; }
 
-body {
-  background: var(--bg);
-  color: var(--ink);
-  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
-  font-size: 15px;
-  line-height: 1.65;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 }
 
 /* Question text: serif, weighty */
@@ -85,9 +108,11 @@ body {
 }
 
 /* ─── Typography ─── */
-h1 { font-size: 1.7rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.2; }
-h2 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; }
-h3 { font-size: 1.05rem; font-weight: 600; }
+@layer base {
+  h1 { font-size: 1.7rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.2; }
+  h2 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; }
+  h3 { font-size: 1.05rem; font-weight: 600; }
+}
 
 /* ─── Scrollbar ─── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -138,11 +163,11 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 }
 .btn-secondary:hover { background: var(--bg-hover); }
 .btn-accent {
-  background: var(--accent);
+  background: var(--accent-strong);
   color: #fff;
-  box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+  box-shadow: 0 2px 8px rgba(92,97,201,0.25);
 }
-.btn-accent:hover { background: #1d4ed8; }
+.btn-accent:hover { background: #4a4eb0; }
 .btn-ghost {
   background: transparent;
   color: var(--ink-muted);
@@ -176,11 +201,26 @@ h3 { font-size: 1.05rem; font-weight: 600; }
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
-.badge-green { background: #dcfce7; color: #15803d; }
-.badge-amber { background: #fef9c3; color: #92400e; }
-.badge-red   { background: #fee2e2; color: #991b1b; }
-.badge-blue  { background: #dbeafe; color: #1e40af; }
+.badge-green { background: var(--success-bg); color: var(--success-ink); }
+.badge-amber { background: var(--warning-bg); color: var(--warning-ink); }
+.badge-red   { background: var(--error-bg); color: var(--error-ink); }
+.badge-blue  { background: var(--info-bg); color: var(--info-ink); }
 .badge-grey  { background: var(--bg-elevated); color: var(--ink-muted); }
+
+/* ─── Banner (inline status message) ─── */
+.banner {
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid transparent;
+}
+.banner-success { background: var(--success-bg); color: var(--success-ink); }
+.banner-warning { background: var(--warning-bg); color: var(--warning-ink); }
+.banner-error   { background: var(--error-bg); color: var(--error-ink); }
+.banner-info    { background: var(--info-bg); color: var(--info-ink); }
 
 /* ─── Pill / Tag ─── */
 .pill {
@@ -247,8 +287,8 @@ h3 { font-size: 1.05rem; font-weight: 600; }
   border: 2px solid var(--accent);
   animation: spin-border 1s linear infinite;
 }
-.stage-dot-done { background: #dcfce7; color: #15803d; }
-.stage-dot-failed { background: #fee2e2; color: #991b1b; }
+.stage-dot-done { background: var(--success-bg); color: var(--success-ink); }
+.stage-dot-failed { background: var(--error-bg); color: var(--error-ink); }
 
 @keyframes spin-border {
   0%   { box-shadow: 0 0 0 2px var(--accent-dim), 2px 0 0 2px var(--accent); }
@@ -269,8 +309,8 @@ h3 { font-size: 1.05rem; font-weight: 600; }
 
 /* ─── Recording state (pulsing glow) ─── */
 @keyframes record-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(37,99,235,0.35); }
-  50%       { box-shadow: 0 0 0 10px rgba(37,99,235,0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(138,144,232,0.35); }
+  50%       { box-shadow: 0 0 0 10px rgba(138,144,232,0); }
 }
 .recording-glow {
   animation: record-pulse 1.4s ease-in-out infinite;

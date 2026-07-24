@@ -147,14 +147,14 @@ export default function Examiner({ questionText, audioUrl, whyAsked, category, d
 }
 
 function diffColor(d: number) {
-  return ["", "var(--timer-ok)", "#16a34a", "var(--timer-amber)", "var(--timer-danger)"][d] ?? "var(--ink-muted)";
+  return ["", "var(--score-4)", "var(--score-3)", "var(--timer-amber)", "var(--timer-danger)"][d] ?? "var(--ink-muted)";
 }
 function diffBg(d: number) {
-  return ["", "#dcfce7", "#dcfce7", "#fef9c3", "#fee2e2"][d] ?? "var(--bg-elevated)";
+  return ["", "var(--success-bg)", "var(--success-bg)", "var(--warning-bg)", "var(--error-bg)"][d] ?? "var(--bg-elevated)";
 }
 
 function ExaminerAvatar({ persona }: { persona: string }) {
-  const color = persona === "krevende" ? "#dc2626" : persona === "grundig" ? "#2563eb" : "#16a34a";
+  const color = persona === "krevende" ? "#C15048" : persona === "grundig" ? "#5C61C9" : "#4E9B6B";
   const initials = persona === "krevende" ? "KS" : persona === "grundig" ? "GS" : "VS";
   return (
     <div style={{

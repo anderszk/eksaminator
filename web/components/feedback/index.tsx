@@ -103,13 +103,13 @@ export default function FeedbackPanel({
 
       {/* Missed points */}
       {missedPoints && missedPoints.length > 0 && (
-        <div style={{ padding: "14px 18px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "var(--radius)", fontSize: 13 }}>
-          <div style={{ fontWeight: 600, marginBottom: 6, color: "#92400e", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+        <div className="banner banner-warning" style={{ display: "block" }}>
+          <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>
             Ikke dekket
           </div>
           <ul style={{ margin: 0, padding: "0 0 0 16px", display: "flex", flexDirection: "column", gap: 4 }}>
             {missedPoints.map((p, i) => (
-              <li key={i} style={{ color: "#78350f" }}>{p}</li>
+              <li key={i}>{p}</li>
             ))}
           </ul>
         </div>
@@ -244,7 +244,7 @@ function MetricCell({ label, value, highlight }: { label: string; value: string;
   return (
     <div style={{
       padding: "10px 12px",
-      background: highlight ? "#fffbeb" : "var(--bg-card)",
+      background: highlight ? "var(--warning-bg)" : "var(--bg-card)",
       textAlign: "center",
     }}>
       <div className="mono" style={{ fontSize: 16, fontWeight: 600, color: highlight ? "var(--timer-amber)" : "var(--ink)" }}>{value}</div>

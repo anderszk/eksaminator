@@ -126,6 +126,42 @@ async def _turn_with_audio(question: Question, turn: Turn) -> dict:
     }
 
 
+@router.get("")
+async def list_sessions(document_id: uuid.UUID | None = None, db: AsyncSession = Depends(get_db)):
+    q = select(Session).order_by(Session.started_at.desc())
+    if document_id:
+        q = q.where(Session.document_id == document_id)
+    sessions = (await db.execute(q)).scalars().all()
+    if not sessions:
+        return []
+
+    turns_result = await db.execute(
+        select(Turn.session_id, Turn.status, Turn.scores).where(
+            Turn.session_id.in_([s.id for s in sessions])
+        )
+    )
+    by_session: dict[uuid.UUID, list] = {}
+    for row in turns_result:
+        by_session.setdefault(row.session_id, []).append(row)
+
+    out = []
+    for s in sessions:
+        turns = by_session.get(s.id, [])
+        graded = [t for t in turns if t.status == "graded" and t.scores]
+        means = [sum(t.scores.values()) / len(t.scores.values()) for t in graded]
+        out.append({
+            "id": str(s.id),
+            "document_id": str(s.document_id),
+            "mode": s.mode,
+            "started_at": s.started_at.isoformat(),
+            "ended_at": s.ended_at.isoformat() if s.ended_at else None,
+            "question_count": len(turns),
+            "graded_count": len(graded),
+            "mean_score": round(sum(means) / len(means), 2) if means else None,
+        })
+    return out
+
+
 @router.post("", response_model=SessionOut)
 async def create_session(body: SessionCreate, db: AsyncSession = Depends(get_db)):
     session = Session(
