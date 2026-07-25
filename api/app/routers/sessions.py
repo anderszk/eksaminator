@@ -264,6 +264,7 @@ async def session_report(session_id: uuid.UUID, db: AsyncSession = Depends(get_d
                 "difficulty": question.difficulty,
             },
             "transcript": turn.transcript,
+            "stt_confidence": turn.stt_confidence,
             "scores": turn.scores,
             "mean_score": round(mean_score, 2) if mean_score is not None else None,
             "feedback_md": turn.feedback_md,

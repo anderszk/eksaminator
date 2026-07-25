@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { api, Document } from "@/lib/api";
+import { api, Document, SessionSummary } from "@/lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -33,6 +33,7 @@ export default function OversiktPage() {
   const [coverage, setCoverage] = useState<Coverage[]>([]);
   const [progress, setProgress] = useState<Progress[]>([]);
   const [plan, setPlan] = useState<PlanItem[]>([]);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -84,6 +85,7 @@ export default function OversiktPage() {
       setProgress(prog.progress ?? prog ?? []);
       setPlan(pl.plan ?? pl ?? []);
     });
+    api.sessions.list(activeDoc).then(setSessions).catch(() => setSessions([]));
   }, [activeDoc]);
 
   const togglePlan = async (item: PlanItem) => {
@@ -317,6 +319,44 @@ export default function OversiktPage() {
           </div>
         </div>
       )}
+
+      {/* Session history */}
+      <div className="card" style={{ padding: "20px 24px", marginTop: 20 }}>
+        <h3 style={{ marginBottom: 4 }}>Siste økter</h3>
+        <p style={{ color: "var(--ink-muted)", fontSize: 13, marginBottom: 16 }}>Hver treningsøkt og eksamenssimulering, med lenke til full rapport</p>
+        {sessions.length === 0 ? (
+          <p style={{ color: "var(--ink-faint)", fontSize: 14 }}>Ingen økter ennå. Start med en kort treningsrunde på ti spørsmål.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {sessions.map(s => (
+              <Link
+                key={s.id}
+                href={`/rapport/${s.id}`}
+                style={{
+                  display: "flex", alignItems: "center", gap: 12,
+                  padding: "10px 4px", borderBottom: "1px solid var(--border)",
+                  textDecoration: "none", color: "inherit", fontSize: 13,
+                }}
+              >
+                <span className="pill" style={{ fontSize: 11, flexShrink: 0 }}>{s.mode === "exam" ? "Eksamen" : "Trening"}</span>
+                <span style={{ color: "var(--ink-muted)", flexShrink: 0 }}>
+                  {new Date(s.started_at).toLocaleDateString("nb-NO", { day: "numeric", month: "short", year: "numeric" })}
+                </span>
+                <span style={{ color: "var(--ink-faint)", flex: 1 }}>
+                  {s.question_count} spørsmål
+                  {!s.ended_at && " · pågår"}
+                  {s.ended_at && s.graded_count < s.question_count && " · vurderes fortsatt"}
+                </span>
+                {s.mean_score !== null && (
+                  <span className="mono" style={{ fontWeight: 700, color: s.mean_score < 1.5 ? "var(--score-0)" : s.mean_score < 2.5 ? "var(--score-2)" : s.mean_score < 3.5 ? "var(--score-3)" : "var(--score-4)" }}>
+                    {s.mean_score.toFixed(1)}
+                  </span>
+                )}
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Quick links */}
       <div style={{ display: "flex", gap: 10, marginTop: 20 }}>

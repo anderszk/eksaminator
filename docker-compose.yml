@@ -87,7 +87,7 @@ services:
   stt:
     build: ./stt
     environment:
-      WHISPER_MODEL: ${WHISPER_MODEL:-NbAiLab/nb-whisper-medium}
+      WHISPER_MODEL: ${WHISPER_MODEL:-NbAiLab/nb-whisper-small}
       WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
       WHISPER_COMPUTE: ${WHISPER_COMPUTE:-int8}
     volumes:
@@ -102,7 +102,7 @@ services:
   tts:
     build: ./tts
     environment:
-      PIPER_VOICE: ${PIPER_VOICE:-nb_NO-talesyntese-medium}
+      PIPER_VOICE: ${PIPER_VOICE:-no_NO-talesyntese-medium}
     volumes:
       - piperdata:/voices
     ports: ["9002:9002"]

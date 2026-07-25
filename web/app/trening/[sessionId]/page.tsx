@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useState, useRef, useCallback } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import { nb } from "@/lib/nb";
 import Examiner from "@/components/examiner";
@@ -14,6 +15,7 @@ interface Turn {
   question?: Question;
   audioUrl?: string;
   transcript?: string;
+  sttConfidence?: number | null;
   scores?: Record<string, number>;
   feedbackMd?: string;
   bluffed?: boolean;
@@ -46,10 +48,15 @@ export default function TreningPage({ params }: { params: Promise<{ sessionId: s
   const [questionCount, setQuestionCount] = useState(0);
   const [totalScore, setTotalScore] = useState(0);
   const [sessionScores, setSessionScores] = useState<number[]>([]);
+  const [answerMode, setAnswerMode] = useState<"voice" | "text">("voice");
+  const [textAnswer, setTextAnswer] = useState("");
+  const [textSubmitting, setTextSubmitting] = useState(false);
   const sseRef = useRef<EventSource | null>(null);
 
   const loadNextTurn = useCallback(async () => {
     setPhase("loading");
+    setAnswerMode("voice");
+    setTextAnswer("");
     try {
       const data = await api.sessions.next(sessionId) as any;
       if (!data || data.status === "done") {
@@ -82,7 +89,7 @@ export default function TreningPage({ params }: { params: Promise<{ sessionId: s
       try {
         const data = JSON.parse(e.data);
         if (data.type === "transcript") {
-          setTurn(t => t ? { ...t, transcript: data.text } : t);
+          setTurn(t => t ? { ...t, transcript: data.text, sttConfidence: data.stt_confidence } : t);
         } else if (data.type === "grade") {
           setTurn(t => t ? {
             ...t,
@@ -141,6 +148,19 @@ export default function TreningPage({ params }: { params: Promise<{ sessionId: s
     loadNextTurn();
   };
 
+  const handleTextSubmit = async () => {
+    if (!turn || !textAnswer.trim() || textSubmitting) return;
+    setTextSubmitting(true);
+    try {
+      await api.turns.answerText(turn.id, textAnswer.trim());
+      handleAnswerDone(turn.id);
+    } catch {
+      setError("Kunne ikke sende svaret. Prøv igjen.");
+    } finally {
+      setTextSubmitting(false);
+    }
+  };
+
   if (phase === "error") {
     return (
       <main className="page" style={{ maxWidth: 680 }}>
@@ -162,6 +182,9 @@ export default function TreningPage({ params }: { params: Promise<{ sessionId: s
             {questionCount} spørsmål · Snittskår {avgScore.toFixed(1)}/4
           </p>
           <ScoreTrend scores={sessionScores} />
+          <Link href={`/rapport/${sessionId}`} className="btn btn-primary" style={{ marginTop: 32 }}>
+            Se full rapport
+          </Link>
         </div>
       </main>
     );
@@ -206,7 +229,14 @@ export default function TreningPage({ params }: { params: Promise<{ sessionId: s
           {/* Transcript (while grading) */}
           {turn?.transcript && (
             <div className="fade-up" style={{ marginTop: 20, padding: "14px 16px", background: "var(--bg-elevated)", borderRadius: "var(--radius)", fontSize: 13.5, color: "var(--ink-muted)", lineHeight: 1.6, borderLeft: "3px solid var(--border-strong)" }}>
-              <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6, color: "var(--ink-faint)" }}>Ditt svar</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--ink-faint)" }}>Ditt svar</span>
+                {isLowConfidence(turn.sttConfidence) && (
+                  <span className="badge badge-amber" title="Talegjenkjenningen var usikker på deler av svaret. Sjekk at teksten stemmer.">
+                    Usikker transkripsjon
+                  </span>
+                )}
+              </div>
               {turn.transcript}
             </div>
           )}
@@ -231,12 +261,53 @@ export default function TreningPage({ params }: { params: Promise<{ sessionId: s
         </div>
 
         {/* Right: recorder */}
-        <div style={{ position: "sticky", top: 80, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-          {(phase === "armed" || phase === "recording" || phase === "grading") && turn && (
-            <Recorder
-              turnId={turn.id}
-              onDone={handleAnswerDone}
-            />
+        <div style={{ position: "sticky", top: 80, display: "flex", flexDirection: "column", alignItems: "center", gap: 12, width: "100%" }}>
+          {(phase === "armed" || phase === "recording" || phase === "grading") && turn && answerMode === "voice" && (
+            <>
+              <Recorder
+                turnId={turn.id}
+                onDone={handleAnswerDone}
+              />
+              {phase === "armed" && (
+                <button className="btn btn-ghost btn-sm" onClick={() => setAnswerMode("text")}>
+                  Skriv svar i stedet
+                </button>
+              )}
+            </>
+          )}
+          {phase === "armed" && turn && answerMode === "text" && (
+            <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10 }}>
+              <textarea
+                value={textAnswer}
+                onChange={e => setTextAnswer(e.target.value)}
+                placeholder="Skriv svaret ditt her …"
+                rows={10}
+                autoFocus
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  fontSize: 13.5,
+                  lineHeight: 1.5,
+                  fontFamily: "inherit",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius)",
+                  background: "var(--bg-card)",
+                  color: "var(--ink)",
+                  resize: "vertical",
+                }}
+              />
+              <button
+                className="btn btn-primary"
+                onClick={handleTextSubmit}
+                disabled={!textAnswer.trim() || textSubmitting}
+                style={{ width: "100%", justifyContent: "center" }}
+              >
+                {textSubmitting ? "Sender …" : "Send svar"}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setAnswerMode("voice")}>
+                Ta opp med mikrofon i stedet
+              </button>
+            </div>
           )}
           {phase === "question" && (
             <div style={{ textAlign: "center", color: "var(--ink-faint)", fontSize: 13 }}>
@@ -255,6 +326,12 @@ export default function TreningPage({ params }: { params: Promise<{ sessionId: s
       </div>
     </main>
   );
+}
+
+// Whisper avg_logprob below this is a reasonable heuristic for "the model wasn't
+// confident about this transcription" — worth a visible warning, not a hard cutoff.
+function isLowConfidence(sttConfidence: number | null | undefined): boolean {
+  return sttConfidence !== null && sttConfidence !== undefined && sttConfidence < -1.0;
 }
 
 function ScoreTrend({ scores }: { scores: number[] }) {

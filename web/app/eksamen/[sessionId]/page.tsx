@@ -24,6 +24,7 @@ export default function EksamenPage({ params }: { params: Promise<{ sessionId: s
   const [elapsed, setElapsed] = useState(0); // seconds since session start
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [audioBlocked, setAudioBlocked] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const mrRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -51,12 +52,17 @@ export default function EksamenPage({ params }: { params: Promise<{ sessionId: s
       }
       setTurn({ id: data.turn_id, ordinal: data.ordinal, question: data.question, audioUrl: data.audio_url });
       setQuestionCount(c => c + 1);
+      setAudioBlocked(false);
 
-      // Autoplay question
+      // Autoplay question. Browsers block audio autoplay before any user gesture
+      // on the page — this reliably fails for the very first question (nothing
+      // has been clicked yet) and would otherwise silently strand the user, since
+      // recording only auto-starts via this audio's onEnded event. Surface a
+      // manual play button instead of failing silently.
       if (audioRef.current && data.audio_url) {
         audioRef.current.src = data.audio_url;
         audioRef.current.load();
-        audioRef.current.play().catch(() => {});
+        audioRef.current.play().catch(() => setAudioBlocked(true));
       }
     } catch {
       setPhase("error");
@@ -106,6 +112,17 @@ export default function EksamenPage({ params }: { params: Promise<{ sessionId: s
     };
   }, [turn, loadNextTurn]);
 
+  const playQuestion = useCallback(() => {
+    audioRef.current?.play().then(() => setAudioBlocked(false)).catch(() => {});
+  }, []);
+
+  const handleSkip = useCallback(async () => {
+    if (!turn || isUploading) return;
+    try { await api.turns.skip(turn.id); } catch {/* ok */}
+    setAudioBlocked(false);
+    await loadNextTurn();
+  }, [turn, isUploading, loadNextTurn]);
+
   const endSession = useCallback(async () => {
     setPhase("ending");
     if (timerRef.current) clearInterval(timerRef.current);
@@ -148,13 +165,23 @@ export default function EksamenPage({ params }: { params: Promise<{ sessionId: s
             <div className="mono" style={{ fontSize: 20, fontWeight: 500, color: elapsed > EXAM_DURATION_MINUTES * 60 ? "#E8918A" : "rgba(255,255,255,0.7)" }}>
               {fmtElapsed(elapsed)}
             </div>
-            <button
-              className="btn"
-              style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.15)", fontSize: 13 }}
-              onClick={endSession}
-            >
-              {nb.exam.end}
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="btn"
+                style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.15)", fontSize: 13 }}
+                onClick={handleSkip}
+                disabled={isUploading || isRecording}
+              >
+                Neste spørsmål
+              </button>
+              <button
+                className="btn"
+                style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.15)", fontSize: 13 }}
+                onClick={endSession}
+              >
+                {nb.exam.end}
+              </button>
+            </div>
           </div>
 
           {/* Question (small — meant to be heard) */}
@@ -163,6 +190,15 @@ export default function EksamenPage({ params }: { params: Promise<{ sessionId: s
               <p style={{ fontSize: 15, color: "rgba(255,255,255,0.55)", lineHeight: 1.6 }}>
                 {turn.question.text}
               </p>
+              {audioBlocked && (
+                <button
+                  className="btn btn-sm"
+                  onClick={playQuestion}
+                  style={{ marginTop: 12, background: "rgba(138,144,232,0.15)", color: "#fff", border: "1px solid rgba(138,144,232,0.4)" }}
+                >
+                  ▶ Hør spørsmålet
+                </button>
+              )}
             </div>
           )}
 
@@ -219,9 +255,14 @@ export default function EksamenPage({ params }: { params: Promise<{ sessionId: s
           <p className="mono" style={{ marginTop: 16, fontSize: 13, color: "rgba(255,255,255,0.3)" }}>
             {questionCount} spørsmål · {fmtElapsed(elapsed)}
           </p>
-          <a href="/oversikt" style={{ display: "inline-block", marginTop: 32, padding: "10px 24px", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "var(--radius)", color: "rgba(255,255,255,0.7)", textDecoration: "none", fontSize: 14 }}>
-            Se oversikt
-          </a>
+          <div style={{ display: "flex", gap: 12, marginTop: 32, justifyContent: "center" }}>
+            <a href={`/rapport/${sessionId}`} style={{ display: "inline-block", padding: "10px 24px", background: "#fff", border: "1px solid #fff", borderRadius: "var(--radius)", color: "var(--ink)", textDecoration: "none", fontSize: 14, fontWeight: 500 }}>
+              Se rapport
+            </a>
+            <a href="/oversikt" style={{ display: "inline-block", padding: "10px 24px", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "var(--radius)", color: "rgba(255,255,255,0.7)", textDecoration: "none", fontSize: 14 }}>
+              Se oversikt
+            </a>
+          </div>
         </div>
       )}
     </div>

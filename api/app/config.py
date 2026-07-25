@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     prompt_version: str = "v1"
 
     tts_provider: str = "piper"
-    piper_voice: str = "nb_NO-talesyntese-medium"
+    piper_voice: str = "no_NO-talesyntese-medium"
     azure_speech_key: str = ""
     azure_speech_region: str = "norwayeast"
     azure_tts_voice: str = "nb-NO-PernilleNeural"

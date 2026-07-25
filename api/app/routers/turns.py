@@ -8,6 +8,7 @@ from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +17,10 @@ from app.db import get_db
 from app.models.models import Question, Session, Turn
 
 router = APIRouter(prefix="/turns", tags=["turns"])
+
+
+class TextAnswerIn(BaseModel):
+    text: str
 
 
 def _s3():
@@ -53,6 +58,37 @@ async def submit_answer(turn_id: uuid.UUID, audio: UploadFile, db: AsyncSession 
     await db.commit()
 
     # Get session mode
+    session_result = await db.execute(select(Session).where(Session.id == turn.session_id))
+    session = session_result.scalar_one_or_none()
+
+    if session and session.mode == "drill":
+        redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+        try:
+            await redis.enqueue_job("grade_turn", turn_id=str(turn_id))
+        finally:
+            await redis.aclose()
+
+    return {"status": "recorded", "turn_id": str(turn_id)}
+
+
+@router.post("/{turn_id}/answer-text")
+async def submit_text_answer(turn_id: uuid.UUID, body: TextAnswerIn, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Turn).where(Turn.id == turn_id))
+    turn = result.scalar_one_or_none()
+    if not turn:
+        raise HTTPException(404, "Turn ikke funnet.")
+
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(400, "Svaret kan ikke være tomt.")
+
+    # No audio, so no STT — grade_turn skips straight to grading when it sees
+    # a transcript already set with no answer_s3_key (see worker/stages.py).
+    turn.transcript = text
+    turn.answered_at = datetime.now(timezone.utc)
+    turn.status = "recorded"
+    await db.commit()
+
     session_result = await db.execute(select(Session).where(Session.id == turn.session_id))
     session = session_result.scalar_one_or_none()
 
@@ -115,7 +151,7 @@ async def grade_stream(turn_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 
                 if turn.transcript and attempt < 5:
                     # Send transcript as soon as available
-                    yield f"data: {json.dumps({'type': 'transcript', 'text': turn.transcript})}\n\n"
+                    yield f"data: {json.dumps({'type': 'transcript', 'text': turn.transcript, 'stt_confidence': turn.stt_confidence})}\n\n"
 
                 if turn.status == "graded":
                     yield f"data: {json.dumps({'type': 'grade', 'scores': turn.scores, 'feedback_md': turn.feedback_md, 'bluffed': turn.bluffed, 'used_shape': turn.used_shape, 'missed_points': turn.missed_points or [], 'duration_ms': turn.duration_ms, 'wpm': turn.wpm, 'filler_count': turn.filler_count, 'longest_pause_ms': turn.longest_pause_ms})}\n\n"

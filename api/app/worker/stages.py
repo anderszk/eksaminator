@@ -7,7 +7,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
@@ -202,7 +202,10 @@ async def _stage_structure(db: AsyncSession, doc: Document, run: AnalysisRun) ->
         max_tokens=10000,
     )
 
-    # Save thesis_map
+    # Save thesis_map. A retry after a prior failed/redone structure run would
+    # otherwise leave multiple rows for the same document — every reader assumes
+    # at most one, so replace rather than accumulate.
+    await db.execute(delete(ThesisMap).where(ThesisMap.document_id == doc.id))
     tm = ThesisMap(run_id=run.id, document_id=doc.id, data=structure_map)
     db.add(tm)
 
@@ -347,6 +350,18 @@ async def _stage_questions(db: AsyncSession, doc: Document, run: AnalysisRun) ->
     # Post-process: dedupe by cosine similarity > 0.92
     questions_data = await _dedupe_questions(questions_data)
 
+    dropped = sum(1 for q in questions_data if not q.get("source_refs"))
+    if dropped:
+        logger.warning(
+            "questions stage doc=%s: dropping %d/%d questions with no source_refs",
+            doc.id, dropped, len(questions_data),
+        )
+    if questions_data and dropped == len(questions_data):
+        raise ValueError(
+            f"LLM returned {len(questions_data)} questions but none had source_refs — "
+            "treating as a failure rather than silently persisting zero questions."
+        )
+
     for q in questions_data:
         if not q.get("source_refs"):
             continue  # drop questions with no page refs
@@ -432,7 +447,7 @@ async def _stage_answers(db: AsyncSession, doc: Document, run: AnalysisRun) -> t
                 prompt,
                 system="You are an expert pharmacy examiner. Return only a valid JSON array.",
                 schema_hint='[{"id": "uuid", "model_answer": "...", "rubric": {...}}]',
-                max_tokens=6000,
+                max_tokens=16000,
             )
             total_inp += inp
             total_out += out
@@ -649,51 +664,61 @@ async def grade_turn(ctx, *, turn_id: str):
             logger.error("turn not found: %s", turn_id)
             return
 
-        if not turn.answer_s3_key:
-            logger.error("turn has no audio: %s", turn_id)
+        if not turn.answer_s3_key and not turn.transcript:
+            logger.error("turn has no audio or text answer: %s", turn_id)
             return
 
-        # Download audio
-        import asyncio
-        import boto3
-
-        def _download():
-            client = boto3.client(
-                "s3",
-                endpoint_url=settings.s3_endpoint,
-                aws_access_key_id=settings.s3_access_key,
-                aws_secret_access_key=settings.s3_secret_key,
-                region_name="us-east-1",
-            )
-            obj = client.get_object(Bucket=settings.s3_bucket, Key=turn.answer_s3_key)
-            return obj["Body"].read()
-
-        audio_bytes = await asyncio.to_thread(_download)
-
-        # Get glossary from thesis map
         session_result = await db.execute(select(Session).where(Session.id == turn.session_id))
         session = session_result.scalar_one()
 
-        tm_result = await db.execute(select(ThesisMap).where(ThesisMap.document_id == session.document_id))
-        tm = tm_result.scalar_one_or_none()
-        glossary = (tm.data or {}).get("glossary", []) if tm else []
+        if turn.answer_s3_key:
+            # Download audio
+            import asyncio
+            import boto3
 
-        # STT
-        try:
-            stt_result = await stt.transcribe(audio_bytes, glossary)
-            turn.transcript = stt_result.get("text", "")
-            turn.stt_confidence = stt_result.get("avg_logprob")
+            def _download():
+                client = boto3.client(
+                    "s3",
+                    endpoint_url=settings.s3_endpoint,
+                    aws_access_key_id=settings.s3_access_key,
+                    aws_secret_access_key=settings.s3_secret_key,
+                    region_name="us-east-1",
+                )
+                obj = client.get_object(Bucket=settings.s3_bucket, Key=turn.answer_s3_key)
+                return obj["Body"].read()
+
+            audio_bytes = await asyncio.to_thread(_download)
+
+            # Get glossary from thesis map
+            tm_result = await db.execute(select(ThesisMap).where(ThesisMap.document_id == session.document_id))
+            tm = tm_result.scalar_one_or_none()
+            glossary = (tm.data or {}).get("glossary", []) if tm else []
+
+            # STT
+            try:
+                stt_result = await stt.transcribe(audio_bytes, glossary)
+                turn.transcript = stt_result.get("text", "")
+                turn.stt_confidence = stt_result.get("avg_logprob")
+                turn.status = "transcribed"
+                await db.commit()
+            except Exception as exc:
+                logger.error("STT failed for turn %s: %s", turn_id, exc)
+                # Keep audio, mark for retry
+                return
+
+            # Delivery metrics
+            segs = stt_result.get("segments", [])
+            dur = stt_result.get("duration_s", 0)
+            delivery = metrics.compute_delivery_metrics(segs, turn.transcript or "", dur)
+        else:
+            # Typed answer — transcript was set directly by the answer-text endpoint.
+            # No audio timing to measure delivery from, so those fields stay null.
             turn.status = "transcribed"
             await db.commit()
-        except Exception as exc:
-            logger.error("STT failed for turn %s: %s", turn_id, exc)
-            # Keep audio, mark for retry
-            return
-
-        # Delivery metrics
-        segs = stt_result.get("segments", [])
-        dur = stt_result.get("duration_s", 0)
-        delivery = metrics.compute_delivery_metrics(segs, turn.transcript or "", dur)
+            delivery = {
+                "duration_ms": None, "wpm": None, "filler_count": None,
+                "filler_rate": None, "longest_pause_ms": None, "time_to_first_word_ms": None,
+            }
 
         # Get question
         q_result = await db.execute(select(Question).where(Question.id == turn.question_id))

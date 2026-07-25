@@ -67,6 +67,8 @@ export const api = {
       fd.append("audio", audio, "answer.webm");
       return request(`/turns/${id}/answer`, { method: "POST", body: fd });
     },
+    answerText: (id: string, text: string) =>
+      request(`/turns/${id}/answer-text`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) }),
     get: (id: string) => request(`/turns/${id}`),
     skip: (id: string) => request(`/turns/${id}/skip`, { method: "POST" }),
     followUp: (id: string) => request(`/turns/${id}/follow-up`, { method: "POST" }),
